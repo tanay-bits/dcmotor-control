@@ -60,8 +60,8 @@ while ~has_quit
             fprintf('The motor current is %d mA\n\n',n);
 
         case 'c'                         
-            n = fscanf(mySerial,'%d');   % get the encoder count from PIC32
-            fprintf('The motor angle is %d counts\n\n',n);     % print it to the screen
+            n = fscanf(mySerial,'%d');  
+            fprintf('The motor angle is %d counts\n\n',n); 
             
         case 'd'                         
             n = fscanf(mySerial,'%d');   
@@ -86,6 +86,18 @@ while ~has_quit
                 fprintf('PWM has been set to %d%% in the positive direction.\n\n', duty);
             end
         
+        % SET CURRENT GAINS:
+        case 'g'                         
+            Kp_cur = input('\nEnter your desired Kp current gain [recommended: 4.76]: ');
+            Ki_cur = input('\nEnter your desired Ki current gain [recommended: 0.32]: ');
+            fprintf(mySerial, '%d %d\n',[Kp_cur, Ki_cur]);
+            fprintf('\nSending Kp = %.2f and Ki = %.2f to the current controller.\n\n',Kp_cur,Ki_cur);
+
+        % GET CURRENT GAINS:
+        case 'h'                         
+            [n, m] = fscanf(mySerial,'%d\n%d\n');   
+            fprintf('The current controller is using Kp = %.2f and Ki = %.2f.\n\n',n);
+
         case 'r'
             n = fscanf(mySerial,'%d');
             switch n          

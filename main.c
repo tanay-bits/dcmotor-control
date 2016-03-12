@@ -1,3 +1,6 @@
+///////////////////////////
+// Imports and constants //
+///////////////////////////
 #include "NU32.h"          // config bits, constants, funcs for startup and UART
 #include "encoder.h"
 #include "utilities.h"     
@@ -7,11 +10,15 @@
 #define BUF_SIZE 200
 #define ADC_AVG_OVER 10
 
+//////////////////////
+// Global variables //
+//////////////////////
 static volatile int dutycycle;
+static volatile float KpI = 1, KiI = 0;
 
-//////////////////////////////////
-// ISR for current control loop //
-//////////////////////////////////
+////////////////////////////////
+// Interrupt Service Routines //
+////////////////////////////////
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
   switch (get_mode()) {
     case IDLE:
@@ -50,7 +57,9 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
   IFS0bits.T2IF = 0;    // clear interrupt flag
 }
 
-
+///////////////////
+// Main function //
+///////////////////
 int main() 
 {
   char buffer[BUF_SIZE];
@@ -119,6 +128,21 @@ int main()
       }
 
       case 'f':                      // set PWM (-100 to 100)
+      {
+        set_mode(PWM);
+        NU32_ReadUART3(buffer, BUF_SIZE);
+        sscanf(buffer, "%d", &dutycycle);
+        break;
+      }
+
+      case 'g':                      // set current gains
+      {
+        NU32_ReadUART3(buffer, BUF_SIZE);
+        sscanf(buffer, "%d", &dutycycle);
+        break;
+      }
+
+      case 'h':                      // get current gains
       {
         set_mode(PWM);
         NU32_ReadUART3(buffer, BUF_SIZE);
