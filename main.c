@@ -97,8 +97,8 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
       if (unew > 100){unew = 100;}
       OC1RS = unew * 40;
 
-      // sprintf(buffer, "%d\r\n", unew);
-      // NU32_WriteUART3(buffer);
+      // if (unew > 400){unew = 400;}
+      // OC1RS = unew * 10;
 
       // Store data for MATLAB:
       SENarray[counter] = sensed_cur;

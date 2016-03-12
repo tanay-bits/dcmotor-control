@@ -88,8 +88,8 @@ while ~has_quit
         
         % SET CURRENT GAINS:
         case 'g'                         
-            Kp_cur = input('\nEnter your desired Kp current gain [recommended: 4.76]: ');
-            Ki_cur = input('\nEnter your desired Ki current gain [recommended: 0.32]: ');
+            Kp_cur = input('\nEnter your desired Kp current gain [recommended: 0.75]: ');
+            Ki_cur = input('\nEnter your desired Ki current gain [recommended: 0.05]: ');
             fprintf(mySerial, '%f %f\n',[Kp_cur, Ki_cur]);
             fprintf('\nSending Kp = %.2f and Ki = %.2f to the current controller.\n\n',Kp_cur,Ki_cur);
 
