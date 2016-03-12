@@ -7,19 +7,45 @@
 #include "isense.h"   
 #include "currentcontrol.h"   
 
-#define BUF_SIZE 200
-#define ADC_AVG_OVER 10
+#define BUF_SIZE 200       // max UART message length
+// #define NUMSAMPS 100       // number of points in waveform
+// #define PLOTPTS 100        // number of data points to plot
+// #define PLOTEVERY 1        // plot data every PLOTEVERYth control iteration
 
 //////////////////////
 // Global variables //
 //////////////////////
 static volatile int dutycycle;
-static volatile float KpI = 1, KiI = 0;
+// static volatile int Waveform[NUMSAMPS];
+static volatile int SENarray[100];
+static volatile int REFarray[100];
+// static volatile int StoringData = 0;     // if this flag=1, currently storing plot data
+static volatile float KpI = 0.0, KiI = 0.0;
+static volatile int Eint = 0;            // integral (sum) of control error
+
+/////////////////////////
+// Auxiliary functions //
+/////////////////////////
+// void makeWaveform(){
+//   int i=0, center=0, A=200;
+//   for (i=0; i<NUMSAMPS; ++i){
+//     if (i>0 && i%25==0){
+//       A = -A;
+//     }
+  
+//     Waveform[i] = center + A;
+    
+//   }
+// }
 
 ////////////////////////////////
 // Interrupt Service Routines //
 ////////////////////////////////
 void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
+  static int counter = 0;   // initialize counter once
+  int sensed_cur;           // sensed current in mA
+  int e, u, unew;
+
   switch (get_mode()) {
     case IDLE:
     {
@@ -31,7 +57,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
     case PWM:
     {
       if (dutycycle < 0){
-        LATDbits.LATD8 = 1;     // output = high => motor in reverse
+        LATDbits.LATD8 = 1;    // output = high => motor in reverse
       }
       else{
         LATDbits.LATD8 = 0;    // output = low => motor in forward
@@ -42,7 +68,49 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
         dutycycle = 100;
       }
       
-      OC1RS = (unsigned int)((abs(dutycycle)/100.0)*PR3); 
+      OC1RS = (unsigned int)((abs(dutycycle)/100.0)*PR3);
+      break; 
+    }
+
+    case ITEST:
+    {
+      // Reference signal:
+      int ref;
+      if (counter < 25){ref = 200;}
+      else if (counter < 50){ref = -200;}
+      else if (counter < 75){ref = 200;}
+      else{ref = -200;}
+      
+      // PI current control signal:
+      sensed_cur = read_cur_amps();
+      e = ref - sensed_cur;
+      Eint = Eint + e;
+      u = KpI*e + KiI*Eint;
+      if (u < 0){
+        LATDbits.LATD8 = 1;    // output = high => motor in reverse
+      }
+      else{
+        LATDbits.LATD8 = 0;    // output = low => motor in forward
+      }
+      // unew = u + 50;
+      unew = abs(u);
+      if (unew > 100){unew = 100;}
+      OC1RS = unew * 40;
+
+      // sprintf(buffer, "%d\r\n", unew);
+      // NU32_WriteUART3(buffer);
+
+      // Store data for MATLAB:
+      SENarray[counter] = sensed_cur;
+      REFarray[counter] = ref;
+
+      counter++;
+      if (counter == 100){
+        Eint = 0;     // reset integral of control error
+        counter = 0;  // reset counter
+        set_mode(IDLE);
+      }
+      break;
     }
 
     default:
@@ -67,8 +135,8 @@ int main()
   NU32_LED1 = 1;  // turn off the LEDs
   NU32_LED2 = 1;        
   __builtin_disable_interrupts();
-  encoder_init();	// initialize SPI4 for encoder
-  set_mode(IDLE);	// initialize PIC32 to IDLE mode
+  encoder_init();   // initialize SPI4 for encoder
+  set_mode(IDLE);   // initialize PIC32 to IDLE mode
   adc_init();     // initialize ADC
   currentcontrol_init();  // initialize peripherals for current control
   __builtin_enable_interrupts();
@@ -80,28 +148,17 @@ int main()
     switch (buffer[0]) {
       case 'a':                      // read current sensor (ADC counts)
       {
-        unsigned int sum, i, adc_avg;
-        sum = 0;
-        for (i=0; i<ADC_AVG_OVER; i++){
-          sum = sum + adc_read();
-        }
-        adc_avg = sum/ADC_AVG_OVER;
-        sprintf(buffer, "%d\r\n", adc_avg);
+        unsigned int adc_counts;
+        adc_counts = adc_read();
+        sprintf(buffer, "%d\r\n", adc_counts);
         NU32_WriteUART3(buffer);
         break;
       }
 
       case 'b':                      // read current sensor (mA)
       {
-        unsigned int sum, i, adc_avg;
         int current;
-        sum = 0;
-        for (i=0; i<ADC_AVG_OVER; i++){
-          sum = sum + adc_read();
-        }
-        adc_avg = sum/ADC_AVG_OVER;
-        current = 2.04 * adc_avg - 1024;    // from calibration
-        // if (-3 < current < 3){current = 0;} // deadband
+        current = read_cur_amps();
         sprintf(buffer, "%d\r\n", current);
         NU32_WriteUART3(buffer);
         break;
@@ -117,13 +174,13 @@ int main()
       case 'd':                      // read encoder (deg)
       {
         sprintf(buffer, "%d\r\n", encoder_degs());
-        NU32_WriteUART3(buffer);	
+        NU32_WriteUART3(buffer);    
         break;
       }
 
       case 'e':                      // reset encoder counts
       {
-        encoder_reset();		
+        encoder_reset();        
         break;
       }
 
@@ -137,16 +194,45 @@ int main()
 
       case 'g':                      // set current gains
       {
+        float m, n;
         NU32_ReadUART3(buffer, BUF_SIZE);
-        sscanf(buffer, "%d", &dutycycle);
+        // __builtin_disable_interrupts();
+        sscanf(buffer, "%f %f", &m, &n);
+        KpI = m;
+        KiI = n;
+        // __builtin_enable_interrupts();
         break;
       }
 
       case 'h':                      // get current gains
       {
-        set_mode(PWM);
-        NU32_ReadUART3(buffer, BUF_SIZE);
-        sscanf(buffer, "%d", &dutycycle);
+        sprintf(buffer, "%f\r\n", KpI);
+        NU32_WriteUART3(buffer);
+        sprintf(buffer, "%f\r\n", KiI);
+        NU32_WriteUART3(buffer);
+        break;
+      }
+
+      case 'k':                      // test current control
+      {
+        // Switch to ITEST mode:
+        // __builtin_disable_interrupts();
+        set_mode(ITEST);
+        // __builtin_enable_interrupts();
+        while (get_mode()==ITEST){
+          ;   // do nothing
+        }
+
+        // Send plot data to MATLAB:       
+        sprintf(buffer, "%d\r\n", 100);
+        NU32_WriteUART3(buffer);
+        int idx = 0;
+        // char message[100];
+        for (idx=0; idx<100; idx++){
+          sprintf(buffer, "%d %d\r\n", REFarray[idx], SENarray[idx]);
+          NU32_WriteUART3(buffer);
+        }
+
         break;
       }
 

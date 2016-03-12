@@ -90,13 +90,19 @@ while ~has_quit
         case 'g'                         
             Kp_cur = input('\nEnter your desired Kp current gain [recommended: 4.76]: ');
             Ki_cur = input('\nEnter your desired Ki current gain [recommended: 0.32]: ');
-            fprintf(mySerial, '%d %d\n',[Kp_cur, Ki_cur]);
+            fprintf(mySerial, '%f %f\n',[Kp_cur, Ki_cur]);
             fprintf('\nSending Kp = %.2f and Ki = %.2f to the current controller.\n\n',Kp_cur,Ki_cur);
 
         % GET CURRENT GAINS:
         case 'h'                         
-            [n, m] = fscanf(mySerial,'%d\n%d\n');   
-            fprintf('The current controller is using Kp = %.2f and Ki = %.2f.\n\n',n);
+            n = fscanf(mySerial,'%f\n');
+            fprintf('The current controller is using Kp = %f \n', n); 
+            m = fscanf(mySerial,'%f\n');  
+            fprintf('The current controller is using Ki = %f \n', m);
+
+        % TEST CURRENT CONTROL:
+        case 'k'                         
+            read_plot_matrix(mySerial);
 
         case 'r'
             n = fscanf(mySerial,'%d');

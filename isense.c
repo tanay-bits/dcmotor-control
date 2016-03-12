@@ -1,6 +1,7 @@
 #include "isense.h"
 
 #define SAMPLE_TIME 10     // ADC sample time in core timer ticks (1 tick = 25 ns)
+#define ADC_AVG_OVER 10    // average ADC reading over these many samples
 
 void adc_init(void) {
   AD1PCFGbits.PCFG0 = 0;  //configure RB0 (AN0) as analog input
@@ -20,4 +21,13 @@ unsigned int adc_read(void) {
     ; // wait for conversion to finish
   }
   return ADC1BUF0;
+}
+
+int read_cur_amps(void){
+  unsigned int cur_counts;
+  int cur_amps;
+
+  cur_counts = adc_read();
+  cur_amps = 2.04 * cur_counts - 1024;    // from calibration
+  return cur_amps;
 }
