@@ -19,7 +19,7 @@ int encoder_degs(void) {
   encoder_command(1);
   int counts, degs;
   counts = encoder_command(1);
-  degs = (counts - 32768)*360/1792;
+  degs = (counts - 32768) * 360 / 1792;
   return degs;
 }
 
@@ -40,4 +40,7 @@ void encoder_init(void) {
   SPI4CONbits.MODE32 = 0; 
   SPI4CONbits.SMP = 1;      // sample at the end of the clock
   SPI4CONbits.ON = 1;       // turn SPI on
+  // initialize to default count of 32768:
+  encoder_command(0);
+  encoder_command(0);
 }

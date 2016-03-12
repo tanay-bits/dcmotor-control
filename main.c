@@ -16,6 +16,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
   switch (get_mode()) {
     case IDLE:
     {
+      dutycycle = 0;
       OC1RS = 0;   // 0 duty cycle => H-bridge in brake mode
       break;
     }
@@ -132,7 +133,13 @@ int main()
         break;
       }
       
-      case 'q':
+      case 'p':                      // unpower the motor
+      {
+        set_mode(IDLE);
+        break;
+      }
+
+      case 'q':                      // quit
       {
         set_mode(IDLE);
         break;
