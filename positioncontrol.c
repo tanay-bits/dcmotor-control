@@ -8,6 +8,5 @@ void positioncontrol_init(void){
   IPC4bits.T4IP = 7;       // priority for Timer4 interrupt
   IFS0bits.T4IF = 0;       // clear Timer4 interrupt flag
   IEC0bits.T4IE = 1;       // enable Timer4 interrupt
-  T4CONbits.ON = 1;        // turn on Timer4
-     
+  T4CONbits.ON = 1;        // turn on Timer4    
 }

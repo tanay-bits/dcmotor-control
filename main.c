@@ -14,18 +14,18 @@
 //////////////////////
 // Global variables //
 //////////////////////
-static volatile int dutycycle = 0;                      // duty cycle [-100 to 100] for PWM
-static volatile int ang_target = 0;                     // target position (deg)
-static volatile int u_pos = 0;                          // position control signal (= current control ref)
-static volatile int SENarray[100];                      // array of measured I for ITEST
-static volatile int REFarray[100];                      // ref array for ITEST
-static volatile float KpI = 0.0, KiI = 0.0;             // current control gains
-static volatile float KpP = 0.0, KiP = 0.0, KdP = 0.0;  // position control gains
-static volatile int EIint = 0, EPint = 0;               // integral (sum) of control error
-static volatile int e_pos_prev = 0;                     // previous position error (for D control)
-static volatile int num_samples = 0;                    // # of samples in ref trajectory
-static volatile int REFtraj[MAXSAMPS];                  // ref trajectory for position control
-static volatile int SENtraj[MAXSAMPS];                  // measured trajectory for position control
+static volatile int dutycycle = 0;                          // duty cycle [-100 to 100] for PWM
+static volatile int ang_target = 0;                         // target position (deg)
+static volatile int u_pos = 0;                              // position control signal (= current control ref)
+static volatile int SENarray[100];                          // array of measured I for ITEST
+static volatile int REFarray[100];                          // ref array for ITEST
+static volatile float KpI = 0.75, KiI = 0.05;               // current control gains
+static volatile float KpP = 130.0, KiP = 0.0, KdP = 5000;   // position control gains
+static volatile int EIint = 0, EPint = 0;                   // integral (sum) of control error
+static volatile int e_pos_prev = 0;                         // previous position error (for D control)
+static volatile int num_samples = 0;                        // # of samples in ref trajectory
+static volatile int REFtraj[MAXSAMPS];                      // ref trajectory for position control
+static volatile int SENtraj[MAXSAMPS];                      // measured trajectory for position control
 
 ////////////////////////////////
 // Interrupt Service Routines //
@@ -40,7 +40,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
     {
       EIint = 0;
       dutycycle = 0;
-      OC1RS = 0;   // 0 duty cycle => H-bridge in brake mode
+      OC1RS = 0;            // 0 duty cycle => H-bridge in brake mode
       break;
     }
 
@@ -74,6 +74,11 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
       // PI current control signal:
       sensed_cur = read_cur_amps();
       e = ref - sensed_cur;
+
+      // if (EIint < 800){
+      //   EIint = EIint + e;
+      // }
+
       EIint = EIint + e;
       u = KpI*e + KiI*EIint;
       if (u < 0){
@@ -83,8 +88,8 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
         LATDbits.LATD8 = 0;    // output = low => motor in forward
       }
       unew = abs(u);
-      if (unew > 100){unew = 100;}
       
+      if (unew > 100){unew = 100;}   
       OC1RS = unew * 40;
 
       // if (unew > 600){unew = 600;}
@@ -110,7 +115,8 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
       e = u_pos - sensed_cur;
 
       EIint = EIint + e;
-      // if EIint < 1000{
+      
+      // if (EIint < 1000){
       //   EIint = EIint + e;
       // }
 
@@ -124,7 +130,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
       unew = abs(u);
       if (unew > 100){unew = 100;}
       
-      OC1RS = (unsigned int)((unew/100.0)*PR3);
+      OC1RS = (unsigned int)(((float)(unew)/100.0)*PR3);
       break;
     }
 
@@ -135,6 +141,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
       e = u_pos - sensed_cur;
 
       EIint = EIint + e;
+      
       // if EIint < 1000{
       //   EIint = EIint + e;
       // }
@@ -149,7 +156,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
       unew = abs(u);
       if (unew > 100){unew = 100;}
       
-      OC1RS = (unsigned int)((unew/100.0)*PR3);
+      OC1RS = (unsigned int)(((float)(unew)/100.0)*PR3);
       break;
     }
 
@@ -193,8 +200,8 @@ void __ISR(_TIMER_4_VECTOR, IPL7SOFT) PositionController(void){
 
       // position control signal:
       u_pos_proto = KpP*e_pos + KiP*EPint + KdP*(e_pos - e_pos_prev);
-      if (u_pos_proto > 600){u_pos = 600;}
-      else if (u_pos_proto < -600){u_pos = -600;}
+      if (u_pos_proto > 300){u_pos = 300;}
+      else if (u_pos_proto < -300){u_pos = -300;}
       else u_pos = u_pos_proto;
       e_pos_prev = e_pos;
       break;
@@ -209,8 +216,8 @@ void __ISR(_TIMER_4_VECTOR, IPL7SOFT) PositionController(void){
 
       // position control signal:
       u_pos_proto = KpP*e_pos + KiP*EPint + KdP*(e_pos - e_pos_prev);
-      if (u_pos_proto > 600){u_pos = 600;}
-      else if (u_pos_proto < -600){u_pos = -600;}
+      if (u_pos_proto > 300){u_pos = 300;}
+      else if (u_pos_proto < -300){u_pos = -300;}
       else u_pos = u_pos_proto;
       e_pos_prev = e_pos;
 
@@ -242,8 +249,8 @@ void __ISR(_TIMER_4_VECTOR, IPL7SOFT) PositionController(void){
 int main() 
 {
   char buffer[BUF_SIZE];
-  NU32_Startup(); // cache on, min flash wait, interrupts on, LED/button init, UART init
-  NU32_LED1 = 1;  // turn off the LEDs
+  NU32_Startup();         // cache on, min flash wait, interrupts on, LED/button init, UART init
+  NU32_LED1 = 1;          // turn off the LEDs
   NU32_LED2 = 1;        
   __builtin_disable_interrupts();
   encoder_init();         // initialize SPI4 for encoder
@@ -279,7 +286,7 @@ int main()
       case 'c':                      // read encoder (counts)
       {
         sprintf(buffer, "%d\r\n", encoder_counts());
-        NU32_WriteUART3(buffer); // send encoder count to client
+        NU32_WriteUART3(buffer);
         break;
       }
 
@@ -431,7 +438,7 @@ int main()
         while (get_mode()==TRACK){;}
 
         // Send plot data to MATLAB:
-        __builtin_disable_interrupts();       
+        // __builtin_disable_interrupts();       
         sprintf(buffer, "%d\r\n", num_samples);
         NU32_WriteUART3(buffer);
         int i = 0;
@@ -439,7 +446,7 @@ int main()
           sprintf(buffer, "%d %d\r\n", REFtraj[i], SENtraj[i]);
           NU32_WriteUART3(buffer);
         }
-        __builtin_enable_interrupts();
+        // __builtin_enable_interrupts();
         break;
       }
 

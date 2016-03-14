@@ -66,6 +66,7 @@ if strcmp(method,'cubic')  % calculate a cubic interpolation trajectory
       ref(refCtr) = a0 + a1*tseg + a2*tseg^2 + a3*tseg^3;  % add an element to ref array
       refCtr = refCtr + 1;
     end
+    ref = round(ref);
   end
 
 else  % default is step trajectory

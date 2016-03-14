@@ -51,25 +51,31 @@ while ~has_quit
     
     % take the appropriate action
     switch selection
+        % READ CURRENT SENSOR (ADC COUNTS): 
         case 'a'                         
             n = fscanf(mySerial,'%d');
-            fprintf('The motor current is %d ADC counts\n',n);
+            fprintf('\nThe motor current is %d ADC counts\n',n);
         
+        % READ CURRENT SENSOR (mA): 
         case 'b'                         
             n = fscanf(mySerial,'%d');
-            fprintf('The motor current is %d mA\n',n);
+            fprintf('\nThe motor current is %d mA\n',n);
 
+        % READ ENCODER (COUNTS): 
         case 'c'                         
             n = fscanf(mySerial,'%d');  
-            fprintf('The motor angle is %d counts\n',n); 
-            
+            fprintf('\nThe motor angle is %d counts\n',n); 
+           
+        % READ ENCODER (DEGS): 
         case 'd'                         
             n = fscanf(mySerial,'%d');   
-            fprintf('The motor angle is %d degrees\n',n);
-            
+            fprintf('\nThe motor angle is %d degrees\n',n);
+        
+        % RESET ENCODER COUNTS:  
         case 'e'                         
-            fprintf('The motor angle has been reset\n');  
+            fprintf('\nThe motor angle has been reset\n');  
 
+        % SET PWM:
         case 'f'
             % read the user's desired duty cycle value:                      
             duty = input('\nWhat PWM value would you like [-100 to 100]? ');           
@@ -102,9 +108,9 @@ while ~has_quit
 
         % SET POSITION GAINS:
         case 'i'                         
-            Kp_pos = input('\nEnter your desired Kp position gain [recommended: 0.75]: ');
-            Ki_pos = input('\nEnter your desired Ki position gain [recommended: 0.05]: ');
-            Kd_pos = input('\nEnter your desired Kd position gain [recommended: 90]: ');
+            Kp_pos = input('\nEnter your desired Kp position gain [recommended: 130]: ');
+            Ki_pos = input('\nEnter your desired Ki position gain [recommended: 0]: ');
+            Kd_pos = input('\nEnter your desired Kd position gain [recommended: 5000]: ');
             fprintf(mySerial, '%f %f %f\n',[Kp_pos, Ki_pos, Kd_pos]);
             fprintf('\nSending Kp = %.2f, Ki = %.2f, and Kd = %.2f to the current controller.\n',Kp_pos,Ki_pos,Kd_pos);
 
