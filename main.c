@@ -5,38 +5,27 @@
 #include "encoder.h"
 #include "utilities.h"     
 #include "isense.h"   
-#include "currentcontrol.h"   
+#include "currentcontrol.h"
+#include "positioncontrol.h" 
 
 #define BUF_SIZE 200       // max UART message length
-// #define NUMSAMPS 100       // number of points in waveform
-// #define PLOTPTS 100        // number of data points to plot
-// #define PLOTEVERY 1        // plot data every PLOTEVERYth control iteration
+#define MAXSAMPS 2000      // max number of samples in ref trajectory
 
 //////////////////////
 // Global variables //
 //////////////////////
-static volatile int dutycycle;
-// static volatile int Waveform[NUMSAMPS];
-static volatile int SENarray[100];
-static volatile int REFarray[100];
-// static volatile int StoringData = 0;     // if this flag=1, currently storing plot data
-static volatile float KpI = 0.0, KiI = 0.0;
-static volatile int Eint = 0;            // integral (sum) of control error
-
-/////////////////////////
-// Auxiliary functions //
-/////////////////////////
-// void makeWaveform(){
-//   int i=0, center=0, A=200;
-//   for (i=0; i<NUMSAMPS; ++i){
-//     if (i>0 && i%25==0){
-//       A = -A;
-//     }
-  
-//     Waveform[i] = center + A;
-    
-//   }
-// }
+static volatile int dutycycle = 0;                      // duty cycle [-100 to 100] for PWM
+static volatile int ang_target = 0;                     // target position (deg)
+static volatile int u_pos = 0;                          // position control signal (= current control ref)
+static volatile int SENarray[100];                      // array of measured I for ITEST
+static volatile int REFarray[100];                      // ref array for ITEST
+static volatile float KpI = 0.0, KiI = 0.0;             // current control gains
+static volatile float KpP = 0.0, KiP = 0.0, KdP = 0.0;  // position control gains
+static volatile int EIint = 0, EPint = 0;               // integral (sum) of control error
+static volatile int e_pos_prev = 0;                     // previous position error (for D control)
+static volatile int num_samples = 0;                    // # of samples in ref trajectory
+static volatile int REFtraj[MAXSAMPS];                  // ref trajectory for position control
+static volatile int SENtraj[MAXSAMPS];                  // measured trajectory for position control
 
 ////////////////////////////////
 // Interrupt Service Routines //
@@ -49,6 +38,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
   switch (get_mode()) {
     case IDLE:
     {
+      EIint = 0;
       dutycycle = 0;
       OC1RS = 0;   // 0 duty cycle => H-bridge in brake mode
       break;
@@ -63,7 +53,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
         LATDbits.LATD8 = 0;    // output = low => motor in forward
       }
 
-      // Cap to max valid if user input magnitude greater than 100:
+      // Cap to 100% if user input magnitude greater than a threshold:
       if (abs(dutycycle) > 100){
         dutycycle = 100;
       }
@@ -84,21 +74,21 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
       // PI current control signal:
       sensed_cur = read_cur_amps();
       e = ref - sensed_cur;
-      Eint = Eint + e;
-      u = KpI*e + KiI*Eint;
+      EIint = EIint + e;
+      u = KpI*e + KiI*EIint;
       if (u < 0){
         LATDbits.LATD8 = 1;    // output = high => motor in reverse
       }
       else{
         LATDbits.LATD8 = 0;    // output = low => motor in forward
       }
-      // unew = u + 50;
       unew = abs(u);
       if (unew > 100){unew = 100;}
+      
       OC1RS = unew * 40;
 
-      // if (unew > 400){unew = 400;}
-      // OC1RS = unew * 10;
+      // if (unew > 600){unew = 600;}
+      // OC1RS = (unsigned int)((unew/600.0)*PR3);
 
       // Store data for MATLAB:
       SENarray[counter] = sensed_cur;
@@ -106,9 +96,132 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
 
       counter++;
       if (counter == 100){
-        Eint = 0;     // reset integral of control error
-        counter = 0;  // reset counter
+        EIint = 0;     // reset integral of control error
+        counter = 0;   // reset counter
         set_mode(IDLE);
+      }
+      break;
+    }
+
+    case HOLD:
+    {
+      // PI current control signal:
+      sensed_cur = read_cur_amps();
+      e = u_pos - sensed_cur;
+
+      EIint = EIint + e;
+      // if EIint < 1000{
+      //   EIint = EIint + e;
+      // }
+
+      u = KpI*e + KiI*EIint;
+      if (u < 0){
+        LATDbits.LATD8 = 1;    // output = high => motor in reverse
+      }
+      else{
+        LATDbits.LATD8 = 0;    // output = low => motor in forward
+      }
+      unew = abs(u);
+      if (unew > 100){unew = 100;}
+      
+      OC1RS = (unsigned int)((unew/100.0)*PR3);
+      break;
+    }
+
+    case TRACK:
+    {
+      // PI current control signal:
+      sensed_cur = read_cur_amps();
+      e = u_pos - sensed_cur;
+
+      EIint = EIint + e;
+      // if EIint < 1000{
+      //   EIint = EIint + e;
+      // }
+
+      u = KpI*e + KiI*EIint;
+      if (u < 0){
+        LATDbits.LATD8 = 1;    // output = high => motor in reverse
+      }
+      else{
+        LATDbits.LATD8 = 0;    // output = low => motor in forward
+      }
+      unew = abs(u);
+      if (unew > 100){unew = 100;}
+      
+      OC1RS = (unsigned int)((unew/100.0)*PR3);
+      break;
+    }
+
+    default:
+    {
+      NU32_LED2 = 0;  // turn on LED2 to indicate an error
+      break;
+    }
+
+  }
+  IFS0bits.T2IF = 0;    // clear interrupt flag
+}
+
+void __ISR(_TIMER_4_VECTOR, IPL7SOFT) PositionController(void){
+  static int ctr = 0;          // initialize counter once
+  int sensed_ang, ref_ang;     // angles in deg
+  int e_pos, u_pos_proto;
+
+  switch (get_mode()) {
+    case IDLE:
+    {
+      break;
+    }
+
+    case PWM:
+    {
+      break;
+    }
+    
+    case ITEST:
+    {
+      break;
+    }
+    
+    case HOLD:
+    {
+      sensed_ang = encoder_degs();
+      ref_ang = ang_target;
+      e_pos = ref_ang - sensed_ang;
+      EPint = EPint + e_pos;
+
+      // position control signal:
+      u_pos_proto = KpP*e_pos + KiP*EPint + KdP*(e_pos - e_pos_prev);
+      if (u_pos_proto > 600){u_pos = 600;}
+      else if (u_pos_proto < -600){u_pos = -600;}
+      else u_pos = u_pos_proto;
+      e_pos_prev = e_pos;
+      break;
+    }
+
+    case TRACK:
+    {
+      sensed_ang = encoder_degs();
+      ref_ang = REFtraj[ctr];
+      e_pos = ref_ang - sensed_ang;
+      EPint = EPint + e_pos;
+
+      // position control signal:
+      u_pos_proto = KpP*e_pos + KiP*EPint + KdP*(e_pos - e_pos_prev);
+      if (u_pos_proto > 600){u_pos = 600;}
+      else if (u_pos_proto < -600){u_pos = -600;}
+      else u_pos = u_pos_proto;
+      e_pos_prev = e_pos;
+
+      // Store data for MATLAB:
+      SENtraj[ctr] = sensed_ang;
+
+      ctr++;
+      if (ctr == num_samples){
+        ang_target = REFtraj[num_samples-1];  // set last ref as target for HOLD
+        ctr = 0;                              // reset counter
+        set_mode(HOLD);
       }
       break;
     }
@@ -120,9 +233,7 @@ void __ISR(_TIMER_2_VECTOR, IPL5SOFT) CurrentController(void){
     }
 
   }
-
-
-  IFS0bits.T2IF = 0;    // clear interrupt flag
+  IFS0bits.T4IF = 0;    // clear interrupt flag
 }
 
 ///////////////////
@@ -135,10 +246,11 @@ int main()
   NU32_LED1 = 1;  // turn off the LEDs
   NU32_LED2 = 1;        
   __builtin_disable_interrupts();
-  encoder_init();   // initialize SPI4 for encoder
-  set_mode(IDLE);   // initialize PIC32 to IDLE mode
-  adc_init();     // initialize ADC
+  encoder_init();         // initialize SPI4 for encoder
+  set_mode(IDLE);         // initialize PIC32 to IDLE mode
+  adc_init();             // initialize ADC
   currentcontrol_init();  // initialize peripherals for current control
+  positioncontrol_init(); // initialize timer4 for position control
   __builtin_enable_interrupts();
 
   while(1)
@@ -186,9 +298,9 @@ int main()
 
       case 'f':                      // set PWM (-100 to 100)
       {
-        set_mode(PWM);
         NU32_ReadUART3(buffer, BUF_SIZE);
         sscanf(buffer, "%d", &dutycycle);
+        set_mode(PWM);
         break;
       }
 
@@ -213,36 +325,124 @@ int main()
         break;
       }
 
+      case 'i':                      // set position gains
+      {
+        float m, n, o;
+        NU32_ReadUART3(buffer, BUF_SIZE);
+        sscanf(buffer, "%f %f %f", &m, &n, &o);
+        KpP = m;
+        KiP = n;
+        KdP = o;
+        break;
+      }
+
+      case 'j':                      // get position gains
+      {
+        sprintf(buffer, "%f\r\n", KpP);
+        NU32_WriteUART3(buffer);
+        sprintf(buffer, "%f\r\n", KiP);
+        NU32_WriteUART3(buffer);
+        sprintf(buffer, "%f\r\n", KdP);
+        NU32_WriteUART3(buffer);
+        break;
+      }
+
+
       case 'k':                      // test current control
       {
         // Switch to ITEST mode:
-        // __builtin_disable_interrupts();
+        __builtin_disable_interrupts();
         set_mode(ITEST);
-        // __builtin_enable_interrupts();
+        __builtin_enable_interrupts();
         while (get_mode()==ITEST){
           ;   // do nothing
         }
 
-        // Send plot data to MATLAB:       
+        // Send plot data to MATLAB:
+        __builtin_disable_interrupts();       
         sprintf(buffer, "%d\r\n", 100);
         NU32_WriteUART3(buffer);
         int idx = 0;
-        // char message[100];
         for (idx=0; idx<100; idx++){
           sprintf(buffer, "%d %d\r\n", REFarray[idx], SENarray[idx]);
           NU32_WriteUART3(buffer);
         }
-
+        __builtin_enable_interrupts();
         break;
       }
 
-      case 'r':                      // get mode
+      case 'l':                      // go to angle (deg)
       {
-        sprintf(buffer, "%d\r\n", get_mode());
-        NU32_WriteUART3(buffer);
+        __builtin_disable_interrupts();
+        encoder_reset();
+        e_pos_prev = 0;
+        EPint = 0;
+        EIint = 0;
+        u_pos = 0;
+        NU32_ReadUART3(buffer, BUF_SIZE);
+        sscanf(buffer, "%d", &ang_target);
+        set_mode(HOLD);
+        __builtin_enable_interrupts();
         break;
       }
-      
+
+      case 'm':                      // load step trajectory
+      {
+        NU32_ReadUART3(buffer, BUF_SIZE);
+        __builtin_disable_interrupts();
+        int i, ref_deg;
+        sscanf(buffer, "%d", &num_samples);
+        for (i = 0; i < num_samples; i++){
+          NU32_ReadUART3(buffer, BUF_SIZE);
+          sscanf(buffer, "%d", &ref_deg);
+          REFtraj[i] = ref_deg;
+        }
+        __builtin_enable_interrupts();        
+        break;
+      }
+
+      case 'n':                      // load cubic trajectory
+      {
+        NU32_ReadUART3(buffer, BUF_SIZE);
+        __builtin_disable_interrupts();
+        int i, ref_deg;
+        sscanf(buffer, "%d", &num_samples);
+        for (i = 0; i < num_samples; i++){
+          NU32_ReadUART3(buffer, BUF_SIZE);
+          sscanf(buffer, "%d", &ref_deg);
+          REFtraj[i] = ref_deg;
+        }
+        __builtin_enable_interrupts();        
+        break;
+      }
+
+      case 'o':                      // execute trajectory
+      {
+        __builtin_disable_interrupts();
+        encoder_reset();
+        e_pos_prev = 0;
+        EPint = 0;
+        EIint = 0;
+        u_pos = 0;
+        __builtin_enable_interrupts();
+
+        // Track, then hold:
+        set_mode(TRACK);
+        while (get_mode()==TRACK){;}
+
+        // Send plot data to MATLAB:
+        __builtin_disable_interrupts();       
+        sprintf(buffer, "%d\r\n", num_samples);
+        NU32_WriteUART3(buffer);
+        int i = 0;
+        for (i=0; i<num_samples; i++){
+          sprintf(buffer, "%d %d\r\n", REFtraj[i], SENtraj[i]);
+          NU32_WriteUART3(buffer);
+        }
+        __builtin_enable_interrupts();
+        break;
+      }
+
       case 'p':                      // unpower the motor
       {
         set_mode(IDLE);
@@ -255,6 +455,13 @@ int main()
         break;
       }
 
+      case 'r':                      // get mode
+      {
+        sprintf(buffer, "%d\r\n", get_mode());
+        NU32_WriteUART3(buffer);
+        break;
+      }
+      
       default:
       {
         NU32_LED2 = 0;  // turn on LED2 to indicate an error
@@ -264,16 +471,3 @@ int main()
   }
   return 0;
 }
-
-
-
-
-// case 'x':                      // dummy command for demonstration purposes
-// {
-//   int n = 0, m = 0;
-//   NU32_ReadUART3(buffer,BUF_SIZE);
-//   sscanf(buffer, "%d %d", &n,&m);
-//   sprintf(buffer,"%d\r\n", n + m); // return the sum of numbers
-//   NU32_WriteUART3(buffer);
-//   break;
-// }
