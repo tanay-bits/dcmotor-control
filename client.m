@@ -108,7 +108,7 @@ while ~has_quit
 
         % SET POSITION GAINS:
         case 'i'                         
-            Kp_pos = input('\nEnter your desired Kp position gain [recommended: 130]: ');
+            Kp_pos = input('\nEnter your desired Kp position gain [recommended: 150]: ');
             Ki_pos = input('\nEnter your desired Ki position gain [recommended: 0]: ');
             Kd_pos = input('\nEnter your desired Kd position gain [recommended: 5000]: ');
             fprintf(mySerial, '%f %f %f\n',[Kp_pos, Ki_pos, Kd_pos]);

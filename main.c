@@ -20,7 +20,7 @@ static volatile int u_pos = 0;                              // position control 
 static volatile int SENarray[100];                          // array of measured I for ITEST
 static volatile int REFarray[100];                          // ref array for ITEST
 static volatile float KpI = 0.75, KiI = 0.05;               // current control gains
-static volatile float KpP = 130.0, KiP = 0.0, KdP = 5000;   // position control gains
+static volatile float KpP = 150.0, KiP = 0.0, KdP = 5000;   // position control gains
 static volatile int EIint = 0, EPint = 0;                   // integral (sum) of control error
 static volatile int e_pos_prev = 0;                         // previous position error (for D control)
 static volatile int num_samples = 0;                        // # of samples in ref trajectory
